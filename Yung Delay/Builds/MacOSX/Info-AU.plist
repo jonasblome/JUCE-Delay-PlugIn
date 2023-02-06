@@ -8,7 +8,7 @@
     <key>CFBundleIconFile</key>
     <string></string>
     <key>CFBundleIdentifier</key>
-    <string>com.yourcompany.YungDelay</string>
+    <string>com.Blome.YungDelay</string>
     <key>CFBundleName</key>
     <string>Yung Delay</string>
     <key>CFBundleDisplayName</key>
@@ -29,7 +29,7 @@
     <array>
       <dict>
         <key>name</key>
-        <string>yourcompany: Yung Delay</string>
+        <string>Blome: Yung Delay</string>
         <key>description</key>
         <string>Yung Delay</string>
         <key>factoryFunction</key>

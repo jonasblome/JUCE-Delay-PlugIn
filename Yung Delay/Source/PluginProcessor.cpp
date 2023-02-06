@@ -22,6 +22,12 @@ YungDelayAudioProcessor::YungDelayAudioProcessor()
                        )
 #endif
 {
+    addParameter(mDryWetParameter = new juce::AudioParameterFloat("drywet", "Dry/Wet", 0.0, 1.0, 0.5));
+    addParameter(mFeedbackParameter = new juce::AudioParameterFloat("feedback", "Feedback", 0.0, 0.98, 0.5));
+    addParameter(mDelayTimeParameter = new juce::AudioParameterFloat("delaytime", "Delaytime", 0.01, MAX_DELAY_TIME, 0.5));
+    
+    mDelayTimeSmoothed = 0;
+    
     mCircularBufferLeft = nullptr;
     mCircularBufferRight = nullptr;
     
@@ -30,6 +36,9 @@ YungDelayAudioProcessor::YungDelayAudioProcessor()
     
     mDelayTimeInSamples = 0;
     mDelayReadHead = 0;
+    
+    mFeedbackLeft = 0;
+    mFeedbackRight = 0;
 }
 
 YungDelayAudioProcessor::~YungDelayAudioProcessor()
@@ -110,17 +119,23 @@ void YungDelayAudioProcessor::changeProgramName (int index, const juce::String& 
 void YungDelayAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     mCircularBufferLength = sampleRate * MAX_DELAY_TIME;
+    mDelayTimeInSamples = sampleRate * *mDelayTimeParameter;
     
     if(mCircularBufferLeft == nullptr) {
         mCircularBufferLeft = new float[mCircularBufferLength];
     }
+    
+    juce::zeromem(mCircularBufferLeft, mCircularBufferLength * sizeof(float));
+    
     if(mCircularBufferRight == nullptr) {
         mCircularBufferRight = new float[mCircularBufferLength];
     }
     
+    juce::zeromem(mCircularBufferRight, mCircularBufferLength * sizeof(float));
+
     mCircularBufferWriteHead = 0;
-    mCircularBufferLength = sampleRate * MAX_DELAY_TIME;
-    mDelayTimeInSamples = sampleRate * 0.5;
+    
+    mDelayTimeSmoothed = *mDelayTimeParameter;
 }
 
 void YungDelayAudioProcessor::releaseResources()
@@ -155,6 +170,7 @@ bool YungDelayAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
 }
 #endif
 
+
 void YungDelayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -167,15 +183,19 @@ void YungDelayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     // This is here to avoid people getting screaming feedback
     // when they first compile a plugin, but obviously you don't need to keep
     // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i) {
+        buffer.clear(i, 0, buffer.getNumSamples());
+    }
 
     float* leftChannel = buffer.getWritePointer(0);
     float* rightChannel = buffer.getWritePointer(1);
     
     for(int i = 0; i < buffer.getNumSamples(); i++) {
-        mCircularBufferLeft[mCircularBufferWriteHead] = leftChannel[i];
-        mCircularBufferRight[mCircularBufferWriteHead] = rightChannel[i];
+        mDelayTimeSmoothed = mDelayTimeSmoothed - 0.0003  * (mDelayTimeSmoothed - *mDelayTimeParameter);
+        mDelayTimeInSamples = getSampleRate() * mDelayTimeSmoothed;
+        
+        mCircularBufferLeft[mCircularBufferWriteHead] = leftChannel[i] + mFeedbackLeft;
+        mCircularBufferRight[mCircularBufferWriteHead] = rightChannel[i] + mFeedbackRight;
         
         mDelayReadHead = mCircularBufferWriteHead - mDelayTimeInSamples;
         
@@ -183,11 +203,26 @@ void YungDelayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             mDelayReadHead += mCircularBufferLength;
         }
         
-        buffer.addSample(0, i, mCircularBufferLeft[(int)mDelayReadHead]);
-        buffer.addSample(1, i, mCircularBufferRight[(int)mDelayReadHead]);
+        int readHead_x = (int) mDelayReadHead;
+        int readHead_x1 = readHead_x + 1;
+        
+        float readHeadFloat = mDelayReadHead - readHead_x;
+        
+        if(readHead_x1 >= mCircularBufferLength) {
+            readHead_x1 -= mCircularBufferLength;
+        }
+        
+        float delay_sample_left = lin_interp(mCircularBufferLeft[readHead_x], mCircularBufferLeft[readHead_x1], readHeadFloat);
+        float delay_sample_right = lin_interp(mCircularBufferRight[readHead_x], mCircularBufferRight[readHead_x1], readHeadFloat);
+        
+        mFeedbackLeft = delay_sample_left * *mFeedbackParameter;
+        mFeedbackRight = delay_sample_right * *mFeedbackParameter;
         
         mCircularBufferWriteHead++;
         
+        buffer.setSample(0, i, buffer.getSample(0, i) * (1 - *mDryWetParameter) + delay_sample_left * *mDryWetParameter);
+        buffer.setSample(1, i, buffer.getSample(1, i) * (1 - *mDryWetParameter) + delay_sample_right * *mDryWetParameter);
+
         if(mCircularBufferWriteHead >= mCircularBufferLength) {
             mCircularBufferWriteHead = 0;
         }
@@ -224,4 +259,9 @@ void YungDelayAudioProcessor::setStateInformation (const void* data, int sizeInB
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new YungDelayAudioProcessor();
+}
+
+float YungDelayAudioProcessor::lin_interp(float sample_x, float sample_x1, float inPhase)
+{
+    return (1 - inPhase) * sample_x + inPhase * sample_x1;
 }

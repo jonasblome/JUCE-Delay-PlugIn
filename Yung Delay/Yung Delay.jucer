@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="IEvcX5" name="Yung Delay" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1">
+              addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1"
+              companyName="Blome">
   <MAINGROUP id="buzIm7" name="Yung Delay">
     <GROUP id="{5FAE0760-498C-B2A1-F1F2-F2CF9D108666}" name="Source">
       <FILE id="OENkVR" name="PluginProcessor.cpp" compile="1" resource="0"
